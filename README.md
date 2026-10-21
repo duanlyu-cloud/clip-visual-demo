@@ -1,2 +1,0 @@
-# clip-visual-demo
-CLIP
