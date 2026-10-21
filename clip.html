@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CLIP 跨模态对齐与文本指代图像 — 交互式原理动画</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+      background-color: #0b0f19;
+      color: #f1f5f9;
+      overflow-x: hidden;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.82);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .matrix-cell {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .matrix-cell:hover {
+      transform: scale(1.05);
+      z-index: 10;
+    }
+    .pulse-ring {
+      animation: pulseRing 2s infinite;
+    }
+    @keyframes pulseRing {
+      0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.5); }
+      70% { box-shadow: 0 0 0 10px rgba(56, 189, 248, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+    }
+    input[type="range"] {
+      accent-color: #38bdf8;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-sky-500 selection:text-white">
+
+  <!-- Top Header & Navigation -->
+  <header class="border-b border-slate-800/80 bg-slate-900/90 sticky top-0 z-30 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20 font-bold text-white text-sm">
+          CLIP
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-2">
+            CLIP 跨模态融合与文本指代图像
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">交互式动画演示</span>
+          </h1>
+          <p class="text-xs text-slate-400">直观理解双塔特征投影、对比学习拉近/推远机制、零样本检索与局部区域指代</p>
+        </div>
+      </div>
+
+      <!-- Stage Switcher Tabs -->
+      <nav class="flex flex-wrap items-center gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800" aria-label="演示阶段切换">
+        <button id="tabBtn1" type="button" class="stage-tab px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all bg-sky-500 text-white shadow-sm" data-stage="1">
+          ① 双塔编码与投影
+        </button>
+        <button id="tabBtn2" type="button" class="stage-tab px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white" data-stage="2">
+          ② 对比学习与语义对齐
+        </button>
+        <button id="tabBtn3" type="button" class="stage-tab px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white" data-stage="3">
+          ③ 文本指代图像推理
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 space-y-5">
+
+    <!-- ==================== STAGE 1: DUAL ENCODER & PROJECTION ==================== -->
+    <section id="stage1Panel" class="space-y-4">
+      <div class="glass-card rounded-2xl p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-sky-400">第一阶段 · Dual-Encoder Architecture</span>
+            <h2 class="text-lg font-bold text-white mt-0.5">双塔独立编码与共享特征空间映射</h2>
+            <p class="text-xs sm:text-sm text-slate-300 mt-1">
+              CLIP 不在编码器内部做交叉注意力融合，而是分别将图像切片（Patches）和文本词元（Tokens）编码为特征向量，再通过线性投射层与 L2 归一化映射到<strong>同一维度的单位超球面空间</strong>。
+            </p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button id="s1PlayPauseBtn" type="button" class="px-3.5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs sm:text-sm transition flex items-center gap-1.5 shadow-lg shadow-sky-500/20">
+              <span id="s1PlayIcon">⏸</span>
+              <span id="s1PlayText">暂停动画</span>
+            </button>
+            <button id="s1StepBtn" type="button" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs sm:text-sm transition border border-slate-700">
+              单步演进 ⏭
+            </button>
+          </div>
+        </div>
+
+        <!-- Sample Selector for Stage 1 -->
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs text-slate-400 font-medium">选择输入图文对：</span>
+            <button type="button" class="s1-pair-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/40" data-pair="0">🐕 金毛犬</button>
+            <button type="button" class="s1-pair-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 text-slate-300 border border-slate-700 hover:border-slate-600" data-pair="1">🐈 橘猫</button>
+            <button type="button" class="s1-pair-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 text-slate-300 border border-slate-700 hover:border-slate-600" data-pair="2">🚗 红色跑车</button>
+            <button type="button" class="s1-pair-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 text-slate-300 border border-slate-700 hover:border-slate-600" data-pair="3">🚀 宇航员</button>
+          </div>
+
+          <!-- Progress Step Indicator -->
+          <div class="flex items-center gap-1.5 text-xs">
+            <span class="s1-phase-badge px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700" data-phase="0">1. 切片/分词</span>
+            <span class="text-slate-600">→</span>
+            <span class="s1-phase-badge px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700" data-phase="1">2. 双塔特征提取</span>
+            <span class="text-slate-600">→</span>
+            <span class="s1-phase-badge px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700" data-phase="2">3. 线性投影与归一化</span>
+            <span class="text-slate-600">→</span>
+            <span class="s1-phase-badge px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700" data-phase="3">4. 計算余弦相似度</span>
+          </div>
+        </div>
+
+        <!-- Stage 1 Animated Canvas Container -->
+        <div class="mt-4 relative w-full h-[420px] sm:h-[460px] rounded-xl bg-slate-950 border border-slate-800/90 overflow-hidden">
+          <canvas id="stage1Canvas" class="w-full h-full block"></canvas>
+        </div>
+
+        <!-- Bottom Explanation Cards for Stage 1 -->
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-sky-500/20">
+            <div class="text-xs font-semibold text-sky-400 flex items-center justify-between">
+              <span>视觉流：Image Encoder (ViT)</span>
+              <span class="font-mono text-[11px] bg-sky-500/10 px-1.5 py-0.5 rounded">d_img = 768 → 512</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">
+              将图像切分为固定大小的 Patch 序列，加上 <code class="text-sky-300">[CLS]</code> 标记送入 Vision Transformer，提取全局视觉表征 $I_f$，再由投影矩阵 $W_i$ 映射并归一化为单位向量 $I_e$。
+            </p>
+          </div>
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/20">
+            <div class="text-xs font-semibold text-amber-400 flex items-center justify-between">
+              <span>语言流：Text Encoder (Transformer)</span>
+              <span class="font-mono text-[11px] bg-amber-500/10 px-1.5 py-0.5 rounded">d_txt = 512 → 512</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">
+              将文本分词并添加 <code class="text-amber-300">[SOS]</code> 与 <code class="text-amber-300">[EOS]</code>，通过因果自注意力层提取序列末尾 <code class="text-amber-300">[EOS]</code> 处的特征 $T_f$，再由 $W_t$ 投射并归一化为 $T_e$。
+            </p>
+          </div>
+          <div class="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-500/20">
+            <div class="text-xs font-semibold text-emerald-400 flex items-center justify-between">
+              <span>跨模态融合方式：点积相似度</span>
+              <span class="font-mono text-[11px] bg-emerald-500/10 px-1.5 py-0.5 rounded">cos(θ) = I_e · T_e</span>
+            </div>
+            <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">
+              由于 $I_e$ 和 $T_e$ 都经过了 L2 归一化（长度为 1），它们的点积就等于两向量夹角的余弦值 $\cos(\theta)$。夹角越小，代表图文语义越一致。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== STAGE 2: CONTRASTIVE LEARNING & SIMILARITY MATRIX ==================== -->
+    <section id="stage2Panel" class="space-y-4 hidden">
+      <div class="glass-card rounded-2xl p-4 sm:p-5">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">第二阶段 · Contrastive Pre-training</span>
+            <h2 class="text-lg font-bold text-white mt-0.5">对比学习训练：拉近正样本对，推远负样本对</h2>
+            <p class="text-xs sm:text-sm text-slate-300 mt-1">
+              拖动训练轮次（Epoch）滑块或点击自动训练，观察批内 $N \times N$ 相似度矩阵与右侧<strong>单位超球面共享语义空间</strong>如何从随机分布收敛到精准对齐。点击矩阵中的任意格子可查看对应图文向量的夹角与受力方向。
+            </p>
+          </div>
+
+          <!-- Training Controls -->
+          <div class="flex flex-wrap items-center gap-3 bg-slate-950/90 p-2.5 rounded-xl border border-slate-800 shrink-0">
+            <button id="s2AutoTrainBtn" type="button" class="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs sm:text-sm transition shadow-lg shadow-emerald-500/20">
+              ▶ 播放训练演化
+            </button>
+            <button id="s2ResetBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition border border-slate-700">
+              重置随机初始化
+            </button>
+            <div class="flex items-center gap-2 pl-2 border-l border-slate-800">
+              <label for="s2EpochSlider" class="text-xs text-slate-400 whitespace-nowrap">训练进度:</label>
+              <input id="s2EpochSlider" type="range" min="0" max="100" value="0" class="w-28 sm:w-36 cursor-pointer" />
+              <span id="s2EpochLabel" class="text-xs font-mono font-bold text-emerald-400 w-20 text-right">Epoch 0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Matrix + Hypersphere Grid -->
+        <div class="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+
+          <!-- Left: N x N Similarity Matrix -->
+          <div class="lg:col-span-6 flex flex-col justify-between bg-slate-950/80 rounded-xl p-4 border border-slate-800/90">
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                  <span>批内余弦相似度矩阵 ($N \times N$)</span>
+                  <span class="text-[11px] font-normal text-slate-400">点击任意单元格高亮向量对</span>
+                </h3>
+                <span id="s2LossBadge" class="text-xs font-mono px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                  InfoNCE Loss: 1.386
+                </span>
+              </div>
+
+              <!-- Matrix Table Grid -->
+              <div class="overflow-x-auto">
+                <div id="similarityMatrixGrid" class="min-w-[320px] grid grid-cols-5 gap-2 text-center items-center">
+                  <!-- Populated dynamically by JS -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Selected Cell Inspector -->
+            <div id="s2CellInspector" class="mt-4 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span id="s2InspTypeBadge" class="text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    正样本对 (对角线 i = j)
+                  </span>
+                  <span id="s2InspPairTitle" class="text-xs font-bold text-white">图像 #1 (🐕 金毛犬) × 文本 #1 ("一只奔跑的金毛犬")</span>
+                </div>
+                <p id="s2InspDesc" class="text-xs text-slate-400">
+                  对比损失函数产生吸引力（绿色箭头），拉近图像向量 $I_1$ 与对应文本向量 $T_1$ 的空间夹角。
+                </p>
+              </div>
+              <div class="flex items-center gap-3 shrink-0 bg-slate-950 px-3 py-2 rounded-lg border border-slate-800">
+                <div class="text-center">
+                  <div class="text-[10px] text-slate-400">余弦相似度</div>
+                  <div id="s2InspSimVal" class="text-sm font-mono font-bold text-emerald-400">0.24</div>
+                </div>
+                <div class="h-6 w-px bg-slate-800"></div>
+                <div class="text-center">
+                  <div class="text-[10px] text-slate-400">空间夹角 θ</div>
+                  <div id="s2InspAngleVal" class="text-sm font-mono font-bold text-sky-400">76.1°</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: 2D Unit Hypersphere Embedding Space Canvas -->
+          <div class="lg:col-span-6 flex flex-col bg-slate-950/80 rounded-xl p-4 border border-slate-800/90">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h3 class="text-sm font-bold text-white">共享多模态语义空间（单位超球面投影）</h3>
+                <p class="text-[11px] text-slate-400">实线圆点代表图像向量 $I_e$，虚线方框代表文本向量 $T_e$</p>
+              </div>
+              <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer select-none">
+                <input id="s2ShowForcesToggle" type="checkbox" checked class="rounded accent-sky-500" />
+                <span>显示拉近/推远梯度力</span>
+              </label>
+            </div>
+            <div class="relative flex-1 min-h-[340px] sm:min-h-[370px] rounded-xl bg-slate-950 border border-slate-800/70 overflow-hidden">
+              <canvas id="stage2Canvas" class="w-full h-full block"></canvas>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== STAGE 3: ZERO-SHOT & REFERRING EXPRESSION ==================== -->
+    <section id="stage3Panel" class="space-y-4 hidden">
+      <div class="glass-card rounded-2xl p-4 sm:p-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-indigo-400">第三阶段 · Text-to-Image Referring & Retrieval</span>
+            <h2 class="text-lg font-bold text-white mt-0.5">推理阶段：文本如何指代整张图像或图像局部区域</h2>
+            <p class="text-xs sm:text-sm text-slate-300 mt-1">
+              训练完成后，无需微调即可直接将任意自然语言编码为文本向量，通过计算与候选图像（或局部区域/Patch 特征）的余弦相似度，实现<strong>零样本检索分类</strong>与<strong>局部物体指代定位</strong>。
+            </p>
+          </div>
+
+          <!-- Sub-mode Switcher -->
+          <div class="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
+            <button id="s3ModeRetrievalBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500 text-white transition">
+              模式 A：全图指代检索
+            </button>
+            <button id="s3ModeRegionBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">
+              模式 B：局部区域指代 (Dense/Region)
+            </button>
+          </div>
+        </div>
+
+        <!-- SUB-MODE A: GLOBAL IMAGE RETRIEVAL / ZERO-SHOT -->
+        <div id="s3RetrievalView" class="mt-4 space-y-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-semibold text-slate-300">点击或输入指代文本 Query：</span>
+              <button type="button" class="s3-query-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40" data-query="0">
+                "草地上开心奔跑的金毛猎犬"
+              </button>
+              <button type="button" class="s3-query-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600" data-query="1">
+                "趴在窗台晒太阳的毛茸茸橘猫"
+              </button>
+              <button type="button" class="s3-query-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600" data-query="2">
+                "赛道上疾驰的流线型红色跑车"
+              </button>
+              <button type="button" class="s3-query-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600" data-query="3">
+                "漂浮在浩瀚星河中的太空宇航员"
+              </button>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <label for="s3TempSlider" class="text-xs text-slate-400">Softmax 温度 τ:</label>
+              <input id="s3TempSlider" type="range" min="1" max="25" value="10" class="w-24 cursor-pointer" />
+              <span id="s3TempVal" class="text-xs font-mono text-sky-400 w-10">0.10</span>
+            </div>
+          </div>
+
+          <!-- Custom Query Input -->
+          <div class="flex items-center gap-2">
+            <input id="s3CustomInput" type="text" placeholder="也可以输入自定义描述（如：可爱的宠物狗、宇宙飞船员、速度很快的汽车、喵星人）..." class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500" />
+            <button id="s3CustomRunBtn" type="button" class="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs sm:text-sm transition shrink-0">
+              执行向量指代匹配
+            </button>
+          </div>
+
+          <!-- Candidate Gallery + Similarity Score Bars -->
+          <div id="s3CandidateGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Populated dynamically by JS -->
+          </div>
+        </div>
+
+        <!-- SUB-MODE B: REGION / PATCH-LEVEL REFERRING EXPRESSION -->
+        <div id="s3RegionView" class="mt-4 hidden space-y-4">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-xs font-semibold text-slate-300">选择要指代定位的图像局部目标：</span>
+              <button type="button" class="s3-region-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/40" data-region="dog">
+                🎯 "草地左下角的金毛犬"
+              </button>
+              <button type="button" class="s3-region-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600" data-region="car">
+                🎯 "停在右侧路边的红色跑车"
+              </button>
+              <button type="button" class="s3-region-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600" data-region="cat">
+                🎯 "坐在木长椅上的橘猫"
+              </button>
+              <button type="button" class="s3-region-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600" data-region="sun">
+                🎯 "天空右上角的金色太阳"
+              </button>
+            </div>
+            <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer select-none">
+              <input id="s3ShowPatchGridToggle" type="checkbox" checked class="rounded accent-indigo-500" />
+              <span>显示 ViT Patch 特征网格 ($7 \times 5$)</span>
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+            <div class="lg:col-span-8 relative min-h-[340px] sm:min-h-[380px] rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
+              <canvas id="stage3RegionCanvas" class="w-full h-full block"></canvas>
+            </div>
+            <div class="lg:col-span-4 flex flex-col justify-between bg-slate-950/90 rounded-xl p-4 border border-slate-800 space-y-4">
+              <div class="space-y-2">
+                <div class="text-xs font-semibold text-indigo-400">局部指代原理 (RegionCLIP / DenseCLIP)</div>
+                <h4 id="s3RegionTargetTitle" class="text-base font-bold text-white">当前指代："草地左下角的金毛犬"</h4>
+                <p class="text-xs text-slate-300 leading-relaxed">
+                  原版 CLIP 仅输出整图向量。为了实现用自然语言精准定位图像内部的局部物体，模型将图像划分为网格 Patch 或候选框区域 $R_k$，分别计算每个局部区域向量与指代文本向量 $T_e$ 的点积相似度 $\cos(\theta_k) = R_k \cdot T_e$。
+                </p>
+              </div>
+
+              <!-- Region Similarity Ranking -->
+              <div id="s3RegionRankingList" class="space-y-2.5">
+                <!-- Populated by JS -->
+              </div>
+
+              <div class="p-3 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-400 leading-relaxed">
+                💡 <strong>提示：</strong> 您也可以直接在左侧画面中点击任意物体，观察该区域 Patch 向量与各文本提示词的响应热力分布。
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // ==================== DATASET & SHARED STATE ====================
+    const PAIRS = [
+      {
+        id: 0,
+        name: '金毛犬',
+        emoji: '🐕',
+        color: '#38bdf8', // sky-400
+        prompt: 'A photo of a running golden retriever',
+        cnPrompt: '一只在草地上奔跑的金毛犬',
+        tokens: ['[SOS]', '一只', '奔跑的', '金毛犬', '[EOS]'],
+        imgVecSample: [0.68, 0.42, -0.31, 0.51],
+        txtVecSample: [0.66, 0.45, -0.29, 0.53],
+        targetAngle: 28,   // degrees on unit circle
+        initImgAngle: 145,
+        initTxtAngle: 290,
+        keywords: ['狗', '金毛', '犬', '宠物狗', '猎犬', 'dog', 'retriever', '奔跑']
+      },
+      {
+        id: 1,
+        name: '橘猫',
+        emoji: '🐈',
+        color: '#fbbf24', // amber-400
+        prompt: 'A photo of a sleeping orange tabby cat',
+        cnPrompt: '一只趴在窗台晒太阳的橘猫',
+        tokens: ['[SOS]', '晒太阳', '的', '橘猫', '[EOS]'],
+        imgVecSample: [-0.55, 0.62, 0.41, -0.38],
+        txtVecSample: [-0.53, 0.64, 0.39, -0.39],
+        targetAngle: 118,
+        initImgAngle: 35,
+        initTxtAngle: 220,
+        keywords: ['猫', '橘猫', '喵', '小猫', 'cat', '窗台', '晒太阳', '睡觉']
+      },
+      {
+        id: 2,
+        name: '红色跑车',
+        emoji: '🚗',
+        color: '#f43f5e', // rose-500
+        prompt: 'A photo of a fast red sports car',
+        cnPrompt: '一辆在赛道疾驰的红色跑车',
+        tokens: ['[SOS]', '疾驰的', '红色', '跑车', '[EOS]'],
+        imgVecSample: [-0.48, -0.66, 0.35, 0.46],
+        txtVecSample: [-0.46, -0.68, 0.33, 0.45],
+        targetAngle: 208,
+        initImgAngle: 315,
+        initTxtAngle: 80,
+        keywords: ['车', '跑车', '汽车', '红色', '赛道', '交通', '速度', 'car', 'sports']
+      },
+      {
+        id: 3,
+        name: '宇航员',
+        emoji: '🚀',
+        color: '#a855f7', // purple-500
+        prompt: 'A photo of an astronaut floating in space',
+        cnPrompt: '一名漂浮在太空中的宇航员',
+        tokens: ['[SOS]', '太空中', '的', '宇航员', '[EOS]'],
+        imgVecSample: [0.52, -0.59, -0.47, -0.40],
+        txtVecSample: [0.54, -0.57, -0.49, -0.38],
+        targetAngle: 298,
+        initImgAngle: 200,
+        initTxtAngle: 15,
+        keywords: ['宇航员', '太空', '宇宙', '飞船', '星河', '头盔', 'astronaut', 'space']
+      }
+    ];
+
+    let activeStage = 1;
+
+    // Stage 1 state
+    let s1PairIdx = 0;
+    let s1Playing = true;
+    let s1Progress = 0; // 0 to 400 continuous loop
+
+    // Stage 2 state
+    let s2Epoch = 0; // 0 to 100
+    let s2AutoPlaying = false;
+    let s2SelectedRow = 0;
+    let s2SelectedCol = 0;
+    let s2ShowForces = true;
+
+    // Stage 3 state
+    let s3SubMode = 'retrieval'; // 'retrieval' | 'region'
+    let s3SelectedQueryIdx = 0;
+    let s3CustomScores = null;
+    let s3Temperature = 0.10;
+    let s3SelectedRegionKey = 'dog';
+    let s3ShowPatchGrid = true;
+    let s3AnimPulse = 0;
+
+    // ==================== TAB SWITCHING ====================
+    const tabBtns = document.querySelectorAll('.stage-tab');
+    const stagePanels = {
+      1: document.getElementById('stage1Panel'),
+      2: document.getElementById('stage2Panel'),
+      3: document.getElementById('stage3Panel')
+    };
+
+    function switchStage(stageNum) {
+      activeStage = stageNum;
+      tabBtns.forEach(btn => {
+        const s = parseInt(btn.getAttribute('data-stage'), 10);
+        if (s === stageNum) {
+          btn.className = 'stage-tab px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all bg-sky-500 text-white shadow-sm';
+        } else {
+          btn.className = 'stage-tab px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white';
+        }
+      });
+
+      Object.keys(stagePanels).forEach(k => {
+        const num = parseInt(k, 10);
+        if (num === stageNum) {
+          stagePanels[num].classList.remove('hidden');
+        } else {
+          stagePanels[num].classList.add('hidden');
+        }
+      });
+
+      resizeAllCanvases();
+      if (stageNum === 2) {
+        renderSimilarityMatrix();
+      } else if (stageNum === 3) {
+        renderStage3RetrievalCards();
+        renderStage3RegionRanking();
+      }
+    }
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s = parseInt(btn.getAttribute('data-stage'), 10);
+        switchStage(s);
+      });
+    });
+
+    // ==================== STAGE 1 CONTROLS & DRAWING ====================
+    const s1PlayPauseBtn = document.getElementById('s1PlayPauseBtn');
+    const s1PlayIcon = document.getElementById('s1PlayIcon');
+    const s1PlayText = document.getElementById('s1PlayText');
+    const s1StepBtn = document.getElementById('s1StepBtn');
+    const s1PairBtns = document.querySelectorAll('.s1-pair-btn');
+    const s1PhaseBadges = document.querySelectorAll('.s1-phase-badge');
+
+    s1PlayPauseBtn.addEventListener('click', () => {
+      s1Playing = !s1Playing;
+      s1PlayIcon.textContent = s1Playing ? '⏸' : '▶';
+      s1PlayText.textContent = s1Playing ? '暂停动画' : '继续播放';
+    });
+
+    s1StepBtn.addEventListener('click', () => {
+      s1Playing = false;
+      s1PlayIcon.textContent = '▶';
+      s1PlayText.textContent = '继续播放';
+      const currentPhase = Math.floor(s1Progress / 100);
+      s1Progress = ((currentPhase + 1) % 4) * 100 + 50;
+      updateStage1PhaseBadges();
+    });
+
+    s1PairBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        s1PairIdx = parseInt(btn.getAttribute('data-pair'), 10);
+        s1PairBtns.forEach(b => {
+          const p = parseInt(b.getAttribute('data-pair'), 10);
+          if (p === s1PairIdx) {
+            b.className = 's1-pair-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/40';
+          } else {
+            b.className = 's1-pair-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/80 text-slate-300 border border-slate-700 hover:border-slate-600';
+          }
+        });
+      });
+    });
+
+    function updateStage1PhaseBadges() {
+      const phaseIdx = Math.floor(s1Progress / 100) % 4;
+      s1PhaseBadges.forEach(badge => {
+        const p = parseInt(badge.getAttribute('data-phase'), 10);
+        if (p === phaseIdx) {
+          badge.className = 's1-phase-badge px-2.5 py-1 rounded-md bg-sky-500/20 text-sky-300 border border-sky-500/40 font-semibold';
+        } else {
+          badge.className = 's1-phase-badge px-2.5 py-1 rounded-md bg-slate-800 text-slate-400 border border-slate-700';
+        }
+      });
+    }
+
+    function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke, lineWidth = 1.5) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+      if (stroke) {
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+      }
+    }
+
+    function drawStage1Canvas() {
+      const canvas = document.getElementById('stage1Canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+
+      // Subtle background grid
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.05)';
+      ctx.lineWidth = 1;
+      for (let gx = 0; gx < w; gx += 32) {
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+      }
+      for (let gy = 0; gy < h; gy += 32) {
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+      }
+
+      const pair = PAIRS[s1PairIdx];
+      const phase = Math.floor(s1Progress / 100) % 4;
+      const subT = (s1Progress % 100) / 100;
+
+      // Layout columns (responsive X positions)
+      const col1X = w * 0.11; // Raw Input & Patch/Tokenization
+      const col2X = w * 0.35; // Dual Encoders
+      const col3X = w * 0.60; // Linear Projection & L2 Norm
+      const col4X = w * 0.85; // Shared Embedding Space & Cosine Sim
+
+      const topY = h * 0.27;  // Image Stream Y
+      const botY = h * 0.73;  // Text Stream Y
+      const midY = h * 0.50;
+
+      // Connecting Guide Paths
+      function drawStreamLine(x1, y1, x2, y2, activeColor, isActive) {
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = isActive ? activeColor : 'rgba(71, 85, 105, 0.45)';
+        ctx.lineWidth = isActive ? 2.5 : 1.5;
+        ctx.stroke();
+
+        if (isActive) {
+          const px = x1 + (x2 - x1) * subT;
+          const py = y1 + (y2 - y1) * subT;
+          ctx.beginPath();
+          ctx.arc(px, py, 5, 0, Math.PI * 2);
+          ctx.fillStyle = activeColor;
+          ctx.fill();
+          ctx.shadowColor = activeColor;
+          ctx.shadowBlur = 10;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+
+      // Draw Streams
+      drawStreamLine(col1X + 45, topY, col2X - 55, topY, '#38bdf8', phase === 0);
+      drawStreamLine(col1X + 45, botY, col2X - 55, botY, '#fbbf24', phase === 0);
+
+      drawStreamLine(col2X + 55, topY, col3X - 55, topY, '#38bdf8', phase === 1);
+      drawStreamLine(col2X + 55, botY, col3X - 55, botY, '#fbbf24', phase === 1);
+
+      drawStreamLine(col3X + 55, topY, col4X - 65, midY - 18, '#38bdf8', phase === 2);
+      drawStreamLine(col3X + 55, botY, col4X - 65, midY + 18, '#fbbf24', phase === 2);
+
+      // 1. COLUMN 1: IMAGE PATCHES & TEXT TOKENS
+      // Image Input Card
+      drawRoundedRect(ctx, col1X - 48, topY - 48, 96, 96, 12, '#0f172a', phase === 0 ? '#38bdf8' : '#334155', phase === 0 ? 2 : 1.2);
+      ctx.font = '32px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(pair.emoji, col1X, topY - 6);
+
+      // Draw 3x3 ViT Patch grid overlay
+      ctx.strokeStyle = phase === 0 ? 'rgba(56, 189, 248, 0.75)' : 'rgba(148, 163, 184, 0.25)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(col1X - 36 + i * 24, topY - 38);
+        ctx.lineTo(col1X - 36 + i * 24, topY + 22);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(col1X - 36, topY - 38 + i * 20);
+        ctx.lineTo(col1X + 36, topY - 38 + i * 20);
+        ctx.stroke();
+      }
+      ctx.font = '600 11px Inter, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`输入图像 + ViT 切片`, col1X, topY + 35);
+
+      // Text Input Tokens Card
+      drawRoundedRect(ctx, col1X - 58, botY - 44, 116, 88, 12, '#0f172a', phase === 0 ? '#fbbf24' : '#334155', phase === 0 ? 2 : 1.2);
+      ctx.font = '600 11px Inter, sans-serif';
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText(pair.cnPrompt, col1X, botY - 22);
+
+      // Token pills
+      const tokens = pair.tokens;
+      let tokStartX = col1X - 48;
+      tokens.slice(0, 4).forEach((t, idx) => {
+        drawRoundedRect(ctx, tokStartX + idx * 25, botY - 6, 22, 18, 4, 'rgba(251, 191, 36, 0.15)', 'rgba(251, 191, 36, 0.45)', 1);
+        ctx.font = '500 8px Inter, sans-serif';
+        ctx.fillStyle = '#fde68a';
+        ctx.fillText(t.slice(0, 3), tokStartX + idx * 25 + 11, botY + 3);
+      });
+      ctx.font = '600 11px Inter, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText(`文本 Token 序列`, col1X, botY + 30);
+
+      // 2. COLUMN 2: DUAL ENCODERS
+      // Image Encoder Box
+      drawRoundedRect(ctx, col2X - 58, topY - 44, 116, 88, 14, 'rgba(14, 116, 144, 0.18)', phase === 1 ? '#38bdf8' : '#0284c7', phase === 1 ? 2.5 : 1.5);
+      ctx.font = '700 12px Inter, sans-serif';
+      ctx.fillStyle = '#e0f2fe';
+      ctx.fillText('Image Encoder', col2X, topY - 18);
+      ctx.font = '500 10px Inter, sans-serif';
+      ctx.fillStyle = '#7dd3fc';
+      ctx.fillText('ViT / ResNet', col2X, topY + 2);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('提取全局视觉特征 I_f', col2X, topY + 24);
+
+      // Text Encoder Box
+      drawRoundedRect(ctx, col2X - 58, botY - 44, 116, 88, 14, 'rgba(180, 83, 9, 0.18)', phase === 1 ? '#fbbf24' : '#d97706', phase === 1 ? 2.5 : 1.5);
+      ctx.font = '700 12px Inter, sans-serif';
+      ctx.fillStyle = '#fef3c7';
+      ctx.fillText('Text Encoder', col2X, botY - 18);
+      ctx.font = '500 10px Inter, sans-serif';
+      ctx.fillStyle = '#fcd34d';
+      ctx.fillText('Transformer', col2X, botY + 2);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('取 [EOS] 特征 T_f', col2X, botY + 24);
+
+      // No Cross-Attention Notice between towers
+      drawRoundedRect(ctx, col2X - 50, midY - 13, 100, 26, 8, '#0f172a', '#334155', 1);
+      ctx.font = '500 10px Inter, sans-serif';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('⚡ 双塔独立无交互', col2X, midY);
+
+      // 3. COLUMN 3: LINEAR PROJECTION & L2 NORMALIZATION
+      // Image Projection
+      drawRoundedRect(ctx, col3X - 58, topY - 42, 116, 84, 12, '#0f172a', phase === 2 ? '#38bdf8' : '#334155', phase === 2 ? 2.2 : 1.2);
+      ctx.font = '600 11px Inter, sans-serif';
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText('线性投影 W_i + L2归一化', col3X, topY - 22);
+      // Draw mini vector bars
+      pair.imgVecSample.forEach((v, i) => {
+        const bx = col3X - 42 + i * 22;
+        drawRoundedRect(ctx, bx, topY - 8, 18, 22, 4, 'rgba(56, 189, 248, 0.15)', 'rgba(56, 189, 248, 0.45)', 1);
+        ctx.font = '600 9px monospace';
+        ctx.fillStyle = '#bae6fd';
+        ctx.fillText(v.toFixed(2), bx + 9, topY + 3);
+      });
+      ctx.font = '500 10px monospace';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('I_e ∈ ℝ^512, ||I_e||=1', col3X, topY + 28);
+
+      // Text Projection
+      drawRoundedRect(ctx, col3X - 58, botY - 42, 116, 84, 12, '#0f172a', phase === 2 ? '#fbbf24' : '#334155', phase === 2 ? 2.2 : 1.2);
+      ctx.font = '600 11px Inter, sans-serif';
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText('线性投影 W_t + L2归一化', col3X, botY - 22);
+      pair.txtVecSample.forEach((v, i) => {
+        const bx = col3X - 42 + i * 22;
+        drawRoundedRect(ctx, bx, botY - 8, 18, 22, 4, 'rgba(251, 191, 36, 0.15)', 'rgba(251, 191, 36, 0.45)', 1);
+        ctx.font = '600 9px monospace';
+        ctx.fillStyle = '#fde68a';
+        ctx.fillText(v.toFixed(2), bx + 9, botY + 3);
+      });
+      ctx.font = '500 10px monospace';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('T_e ∈ ℝ^512, ||T_e||=1', col3X, botY + 28);
+
+      // 4. COLUMN 4: SHARED HYPERSPHERE & COSINE SIMILARITY
+      const sphereR = Math.min(72, w * 0.095);
+      ctx.beginPath();
+      ctx.arc(col4X, midY, sphereR, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      ctx.fill();
+      ctx.strokeStyle = phase === 3 ? '#10b981' : '#475569';
+      ctx.lineWidth = phase === 3 ? 2.5 : 1.5;
+      ctx.stroke();
+
+      // Inner axes
+      ctx.beginPath();
+      ctx.moveTo(col4X - sphereR, midY); ctx.lineTo(col4X + sphereR, midY);
+      ctx.moveTo(col4X, midY - sphereR); ctx.lineTo(col4X, midY + sphereR);
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Draw aligned vectors I_e and T_e inside sphere
+      const baseRad = (-pair.targetAngle * Math.PI) / 180;
+      const sepRad = phase === 3 ? 0.08 + 0.05 * Math.sin(subT * Math.PI * 2) : 0.16;
+      const imgRad = baseRad - sepRad;
+      const txtRad = baseRad + sepRad;
+
+      const ix = col4X + Math.cos(imgRad) * (sphereR * 0.82);
+      const iy = midY + Math.sin(imgRad) * (sphereR * 0.82);
+      const tx = col4X + Math.cos(txtRad) * (sphereR * 0.82);
+      const ty = midY + Math.sin(txtRad) * (sphereR * 0.82);
+
+      // Image vector arrow
+      ctx.beginPath();
+      ctx.moveTo(col4X, midY);
+      ctx.lineTo(ix, iy);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ix, iy, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fill();
+
+      // Text vector arrow
+      ctx.beginPath();
+      ctx.moveTo(col4X, midY);
+      ctx.lineTo(tx, ty);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(tx, ty, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fill();
+
+      // Labels around sphere
+      ctx.font = '700 12px Inter, sans-serif';
+      ctx.fillStyle = '#10b981';
+      ctx.fillText('共享语义空间', col4X, midY - sphereR - 22);
+      ctx.font = '600 11px monospace';
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillText('cos(θ) = I_e · T_e = 0.94', col4X, midY + sphereR + 18);
+      ctx.font = '500 10px Inter, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('夹角 θ ≈ 19.9° (高度匹配)', col4X, midY + sphereR + 34);
+
+      ctx.restore();
+    }
+
+    // ==================== STAGE 2: MATRIX & HYPERSPHERE ====================
+    const s2EpochSlider = document.getElementById('s2EpochSlider');
+    const s2EpochLabel = document.getElementById('s2EpochLabel');
+    const s2AutoTrainBtn = document.getElementById('s2AutoTrainBtn');
+    const s2ResetBtn = document.getElementById('s2ResetBtn');
+    const s2ShowForcesToggle = document.getElementById('s2ShowForcesToggle');
+    const s2LossBadge = document.getElementById('s2LossBadge');
+
+    // Compute current angle of Image i and Text j at progress t in [0, 1]
+    function lerpAngleDeg(startDeg, endDeg, t) {
+      let diff = ((endDeg - startDeg + 540) % 360) - 180;
+      return (startDeg + diff * t + 360) % 360;
+    }
+
+    function getCurrentAngles(epoch) {
+      const t = Math.pow(epoch / 100, 0.75); // Smooth ease-out convergence
+      return PAIRS.map(p => {
+        // Leave a realistic tiny angle (~14 deg) at epoch 100 so both vectors remain clearly visible
+        const imgEnd = (p.targetAngle - 7 + 360) % 360;
+        const txtEnd = (p.targetAngle + 7) % 360;
+        return {
+          imgDeg: lerpAngleDeg(p.initImgAngle, imgEnd, t),
+          txtDeg: lerpAngleDeg(p.initTxtAngle, txtEnd, t)
+        };
+      });
+    }
+
+    function computeCosSim(degA, degB) {
+      const rad = ((degA - degB) * Math.PI) / 180;
+      return Math.cos(rad);
+    }
+
+    function renderSimilarityMatrix() {
+      const grid = document.getElementById('similarityMatrixGrid');
+      if (!grid) return;
+
+      const angles = getCurrentAngles(s2Epoch);
+      grid.innerHTML = '';
+
+      // Top-left corner header
+      const corner = document.createElement('div');
+      corner.className = 'text-[11px] font-mono text-slate-400 p-1';
+      corner.innerHTML = '图像 \\ 文本';
+      grid.appendChild(corner);
+
+      // Column headers (Text T_1..T_4)
+      PAIRS.forEach((p, colIdx) => {
+        const th = document.createElement('div');
+        th.className = 'p-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-xs font-medium text-amber-300';
+        th.innerHTML = `<div class="text-sm">${p.emoji}</div><div class="text-[10px] truncate">T_${colIdx + 1}:${p.name}</div>`;
+        grid.appendChild(th);
+      });
+
+      let totalPosSim = 0;
+
+      // Rows (Image I_1..I_4)
+      PAIRS.forEach((rowPair, rIdx) => {
+        const rh = document.createElement('div');
+        rh.className = 'p-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-xs font-medium text-sky-300';
+        rh.innerHTML = `<div class="text-sm">${rowPair.emoji}</div><div class="text-[10px] truncate">I_${rIdx + 1}:${rowPair.name}</div>`;
+        grid.appendChild(rh);
+
+        PAIRS.forEach((colPair, cIdx) => {
+          const sim = computeCosSim(angles[rIdx].imgDeg, angles[cIdx].txtDeg);
+          const isDiag = rIdx === cIdx;
+          if (isDiag) totalPosSim += sim;
+
+          const isSelected = rIdx === s2SelectedRow && cIdx === s2SelectedCol;
+          const cell = document.createElement('button');
+          cell.type = 'button';
+
+          // Color encoding based on similarity & diagonal
+          let bgStyle = '';
+          let borderClass = isSelected ? 'ring-2 ring-white border-white' : 'border-slate-800';
+          if (isDiag) {
+            const alpha = Math.max(0.15, (sim + 0.2) * 0.65);
+            bgStyle = `background: rgba(16, 185, 129, ${alpha.toFixed(2)});`;
+          } else {
+            const alpha = Math.max(0.08, Math.abs(sim) * 0.35);
+            bgStyle = `background: rgba(30, 41, 59, ${alpha.toFixed(2)});`;
+          }
+
+          cell.className = `matrix-cell p-2.5 rounded-xl border ${borderClass} flex flex-col items-center justify-center cursor-pointer`;
+          cell.style.cssText = bgStyle;
+          cell.innerHTML = `
+            <span class="text-xs sm:text-sm font-mono font-bold ${isDiag ? 'text-emerald-200' : 'text-slate-300'}">${sim.toFixed(2)}</span>
+            <span class="text-[10px] ${isDiag ? 'text-emerald-300/90' : 'text-slate-400'}">${isDiag ? '正样本' : '负样本'}</span>
+          `;
+
+          cell.addEventListener('click', () => {
+            s2SelectedRow = rIdx;
+            s2SelectedCol = cIdx;
+            renderSimilarityMatrix();
+          });
+
+          grid.appendChild(cell);
+        });
+      });
+
+      // Update InfoNCE Loss badge
+      const avgPos = totalPosSim / 4;
+      const lossVal = Math.max(0.08, 1.45 - avgPos * 1.32);
+      s2LossBadge.textContent = `InfoNCE Loss: ${lossVal.toFixed(3)}`;
+
+      // Update Inspector
+      const selSim = computeCosSim(angles[s2SelectedRow].imgDeg, angles[s2SelectedCol].txtDeg);
+      const selAngle = Math.acos(Math.max(-1, Math.min(1, selSim))) * (180 / Math.PI);
+      const isPos = s2SelectedRow === s2SelectedCol;
+
+      const badgeEl = document.getElementById('s2InspTypeBadge');
+      const titleEl = document.getElementById('s2InspPairTitle');
+      const descEl = document.getElementById('s2InspDesc');
+      const simEl = document.getElementById('s2InspSimVal');
+      const angEl = document.getElementById('s2InspAngleVal');
+
+      if (isPos) {
+        badgeEl.className = 'text-[11px] font-semibold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        badgeEl.textContent = `正样本对 (对角线 i = j = ${s2SelectedRow + 1})`;
+        descEl.textContent = `对比损失函数产生吸引力（绿色虚线），将图像向量 I_${s2SelectedRow + 1} 与配对文本向量 T_${s2SelectedCol + 1} 拉向同一语义方向。`;
+        simEl.className = 'text-sm font-mono font-bold text-emerald-400';
+      } else {
+        badgeEl.className = 'text-[11px] font-semibold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30';
+        badgeEl.textContent = `负样本对 (非对角线 i=${s2SelectedRow + 1}, j=${s2SelectedCol + 1})`;
+        descEl.textContent = `对比损失函数产生排斥力（红色虚线），将不匹配的图像向量 I_${s2SelectedRow + 1} 与文本向量 T_${s2SelectedCol + 1} 推远至正交或相反方向。`;
+        simEl.className = 'text-sm font-mono font-bold text-rose-400';
+      }
+      titleEl.textContent = `图像 #${s2SelectedRow + 1} (${PAIRS[s2SelectedRow].emoji}${PAIRS[s2SelectedRow].name}) × 文本 #${s2SelectedCol + 1} ("${PAIRS[s2SelectedCol].cnPrompt}")`;
+      simEl.textContent = selSim.toFixed(2);
+      angEl.textContent = `${selAngle.toFixed(1)}°`;
+    }
+
+    s2EpochSlider.addEventListener('input', (e) => {
+      s2Epoch = parseInt(e.target.value, 10);
+      s2EpochLabel.textContent = `Epoch ${s2Epoch}`;
+      renderSimilarityMatrix();
+    });
+
+    s2AutoTrainBtn.addEventListener('click', () => {
+      if (s2Epoch >= 100) s2Epoch = 0;
+      s2AutoPlaying = !s2AutoPlaying;
+      s2AutoTrainBtn.textContent = s2AutoPlaying ? '⏸ 暂停训练演化' : '▶ 播放训练演化';
+    });
+
+    s2ResetBtn.addEventListener('click', () => {
+      s2AutoPlaying = false;
+      s2Epoch = 0;
+      s2EpochSlider.value = '0';
+      s2EpochLabel.textContent = 'Epoch 0';
+      s2AutoTrainBtn.textContent = '▶ 播放训练演化';
+      renderSimilarityMatrix();
+    });
+
+    s2ShowForcesToggle.addEventListener('change', (e) => {
+      s2ShowForces = e.target.checked;
+    });
+
+    function drawStage2Canvas() {
+      const canvas = document.getElementById('stage2Canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = Math.min(w, h) * 0.34;
+
+      // Outer glow & coordinate circles
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 1.18, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.06)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Axes
+      ctx.beginPath();
+      ctx.moveTo(cx - radius - 20, cy); ctx.lineTo(cx + radius + 20, cy);
+      ctx.moveTo(cx, cy - radius - 20); ctx.lineTo(cx, cy + radius + 20);
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const angles = getCurrentAngles(s2Epoch);
+
+      // Highlight angle arc between selected row (Image i) and selected col (Text j)
+      const selImgRad = (-angles[s2SelectedRow].imgDeg * Math.PI) / 180;
+      const selTxtRad = (-angles[s2SelectedCol].txtDeg * Math.PI) / 180;
+      const isPos = s2SelectedRow === s2SelectedCol;
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, radius * 0.38, selImgRad, selTxtRad, false);
+      ctx.closePath();
+      ctx.fillStyle = isPos ? 'rgba(16, 185, 129, 0.18)' : 'rgba(244, 63, 94, 0.15)';
+      ctx.fill();
+
+      // Draw each pair's Image vector and Text vector
+      PAIRS.forEach((p, idx) => {
+        const iRad = (-angles[idx].imgDeg * Math.PI) / 180;
+        const tRad = (-angles[idx].txtDeg * Math.PI) / 180;
+
+        const ix = cx + Math.cos(iRad) * radius;
+        const iy = cy + Math.sin(iRad) * radius;
+        const tx = cx + Math.cos(tRad) * radius;
+        const ty = cy + Math.sin(tRad) * radius;
+
+        // Attraction force line between matching I_idx and T_idx
+        if (s2ShowForces && s2Epoch < 98) {
+          ctx.beginPath();
+          ctx.setLineDash([4, 4]);
+          ctx.moveTo(ix, iy);
+          ctx.lineTo(tx, ty);
+          ctx.strokeStyle = 'rgba(16, 185, 129, 0.55)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        const isImgSelected = idx === s2SelectedRow;
+        const isTxtSelected = idx === s2SelectedCol;
+
+        // Image Vector Line (Solid)
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(ix, iy);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = isImgSelected ? 3.2 : 1.8;
+        ctx.globalAlpha = isImgSelected ? 1 : 0.65;
+        ctx.stroke();
+
+        // Image Node Circle
+        ctx.beginPath();
+        ctx.arc(ix, iy, isImgSelected ? 13 : 10, 0, Math.PI * 2);
+        ctx.fillStyle = '#0f172a';
+        ctx.fill();
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = isImgSelected ? 3 : 2;
+        ctx.stroke();
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p.emoji, ix, iy);
+
+        // Label I_idx
+        const iLabelX = cx + Math.cos(iRad) * (radius + 26);
+        const iLabelY = cy + Math.sin(iRad) * (radius + 26);
+        ctx.font = '700 10px Inter, sans-serif';
+        ctx.fillStyle = p.color;
+        ctx.fillText(`I_${idx + 1}`, iLabelX, iLabelY);
+
+        // Text Vector Line (Dashed)
+        ctx.beginPath();
+        ctx.setLineDash([5, 4]);
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = isTxtSelected ? 3.2 : 1.8;
+        ctx.globalAlpha = isTxtSelected ? 1 : 0.65;
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Text Node Badge
+        drawRoundedRect(ctx, tx - 14, ty - 11, 28, 22, 6, '#1e293b', p.color, isTxtSelected ? 2.5 : 1.5);
+        ctx.font = '700 10px monospace';
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(`T_${idx + 1}`, tx, ty);
+
+        ctx.globalAlpha = 1;
+      });
+
+      // Repulsion indicator if a negative pair is selected
+      if (s2ShowForces && s2SelectedRow !== s2SelectedCol) {
+        const iRad = (-angles[s2SelectedRow].imgDeg * Math.PI) / 180;
+        const tRad = (-angles[s2SelectedCol].txtDeg * Math.PI) / 180;
+        const ix = cx + Math.cos(iRad) * radius;
+        const iy = cy + Math.sin(iRad) * radius;
+        const tx = cx + Math.cos(tRad) * radius;
+        const ty = cy + Math.sin(tRad) * radius;
+
+        ctx.beginPath();
+        ctx.setLineDash([3, 3]);
+        ctx.moveTo(ix, iy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = '#f43f5e';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.restore();
+    }
+
+    // ==================== STAGE 3: ZERO-SHOT & REGION REFERRING ====================
+    const s3ModeRetrievalBtn = document.getElementById('s3ModeRetrievalBtn');
+    const s3ModeRegionBtn = document.getElementById('s3ModeRegionBtn');
+    const s3RetrievalView = document.getElementById('s3RetrievalView');
+    const s3RegionView = document.getElementById('s3RegionView');
+    const s3QueryBtns = document.querySelectorAll('.s3-query-btn');
+    const s3TempSlider = document.getElementById('s3TempSlider');
+    const s3TempVal = document.getElementById('s3TempVal');
+    const s3CustomInput = document.getElementById('s3CustomInput');
+    const s3CustomRunBtn = document.getElementById('s3CustomRunBtn');
+
+    s3ModeRetrievalBtn.addEventListener('click', () => {
+      s3SubMode = 'retrieval';
+      s3ModeRetrievalBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500 text-white transition';
+      s3ModeRegionBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+      s3RetrievalView.classList.remove('hidden');
+      s3RegionView.classList.add('hidden');
+      renderStage3RetrievalCards();
+    });
+
+    s3ModeRegionBtn.addEventListener('click', () => {
+      s3SubMode = 'region';
+      s3ModeRegionBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500 text-white transition';
+      s3ModeRetrievalBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+      s3RegionView.classList.remove('hidden');
+      s3RetrievalView.classList.add('hidden');
+      resizeAllCanvases();
+      renderStage3RegionRanking();
+    });
+
+    s3QueryBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        s3SelectedQueryIdx = parseInt(btn.getAttribute('data-query'), 10);
+        s3CustomScores = null;
+        s3CustomInput.value = '';
+        s3QueryBtns.forEach(b => {
+          const q = parseInt(b.getAttribute('data-query'), 10);
+          if (q === s3SelectedQueryIdx) {
+            b.className = 's3-query-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-300 border border-sky-500/40';
+          } else {
+            b.className = 's3-query-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600';
+          }
+        });
+        renderStage3RetrievalCards();
+      });
+    });
+
+    s3TempSlider.addEventListener('input', (e) => {
+      s3Temperature = parseInt(e.target.value, 10) / 100;
+      s3TempVal.textContent = s3Temperature.toFixed(2);
+      renderStage3RetrievalCards();
+    });
+
+    function runCustomTextQuery() {
+      const q = s3CustomInput.value.trim().toLowerCase();
+      if (!q) {
+        s3CustomScores = null;
+        renderStage3RetrievalCards();
+        return;
+      }
+      // Compute semantic keyword affinity against the 4 candidates
+      s3CustomScores = PAIRS.map((p, idx) => {
+        let score = 0.18;
+        p.keywords.forEach(kw => {
+          if (q.includes(kw.toLowerCase())) score += 0.36;
+        });
+        if (q.includes(p.name)) score += 0.45;
+        return Math.min(0.96, score + (idx === 0 ? 0.02 : 0));
+      });
+      renderStage3RetrievalCards();
+    }
+
+    s3CustomRunBtn.addEventListener('click', runCustomTextQuery);
+    s3CustomInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') runCustomTextQuery();
+    });
+
+    function renderStage3RetrievalCards() {
+      const container = document.getElementById('s3CandidateGrid');
+      if (!container) return;
+
+      // Raw cosine similarities for the active query
+      const rawSims = s3CustomScores || PAIRS.map((p, idx) => {
+        if (idx === s3SelectedQueryIdx) return 0.91;
+        // Realistic low cosine similarities for non-matching categories
+        const diff = Math.abs(idx - s3SelectedQueryIdx);
+        return diff === 1 ? 0.21 : 0.12;
+      });
+
+      // Softmax with temperature
+      const exps = rawSims.map(s => Math.exp(s / s3Temperature));
+      const sumExp = exps.reduce((a, b) => a + b, 0);
+      const probs = exps.map(e => (e / sumExp) * 100);
+
+      let maxIdx = 0;
+      probs.forEach((p, i) => { if (p > probs[maxIdx]) maxIdx = i; });
+
+      container.innerHTML = '';
+      PAIRS.forEach((p, idx) => {
+        const isWinner = idx === maxIdx;
+        const sim = rawSims[idx];
+        const prob = probs[idx];
+
+        const card = document.createElement('div');
+        card.className = `p-4 rounded-2xl border transition-all flex flex-col justify-between ${
+          isWinner
+            ? 'bg-slate-900/95 border-sky-400 ring-2 ring-sky-500/30 shadow-xl shadow-sky-500/10'
+            : 'bg-slate-950/80 border-slate-800/80 opacity-80'
+        }`;
+
+        card.innerHTML = `
+          <div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-mono text-slate-400">候选图像 #${idx + 1}</span>
+              ${
+                isWinner
+                  ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">✓ 文本指代命中</span>'
+                  : '<span class="text-[11px] text-slate-500">未命中</span>'
+              }
+            </div>
+            <div class="my-4 h-28 rounded-xl bg-slate-900 border border-slate-800 flex flex-col items-center justify-center relative overflow-hidden">
+              <div class="text-5xl mb-1">${p.emoji}</div>
+              <div class="text-xs font-semibold text-slate-200">${p.name}</div>
+            </div>
+          </div>
+
+          <div class="space-y-2 pt-2 border-t border-slate-800/80">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-400">余弦相似度 (I_${idx + 1} · T_q)</span>
+              <span class="font-mono font-bold ${isWinner ? 'text-sky-400' : 'text-slate-300'}">${sim.toFixed(2)}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-400">Softmax 指代概率</span>
+              <span class="font-mono font-bold ${isWinner ? 'text-emerald-400' : 'text-slate-400'}">${prob.toFixed(1)}%</span>
+            </div>
+            <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-300 ${isWinner ? 'bg-gradient-to-r from-sky-400 to-emerald-400' : 'bg-slate-600'}" style="width: ${Math.max(3, prob).toFixed(1)}%"></div>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // ==================== STAGE 3 SUB-MODE B: REGION REFERRING ====================
+    const REGIONS = {
+      dog: {
+        key: 'dog',
+        label: '草地左下角的金毛犬',
+        emoji: '🐕',
+        nx: 0.22, ny: 0.68, nw: 0.24, nh: 0.34,
+        color: '#38bdf8'
+      },
+      cat: {
+        key: 'cat',
+        label: '坐在木长椅上的橘猫',
+        emoji: '🐈',
+        nx: 0.50, ny: 0.54, nw: 0.22, nh: 0.28,
+        color: '#fbbf24'
+      },
+      car: {
+        key: 'car',
+        label: '停在右侧路边的红色跑车',
+        emoji: '🚗',
+        nx: 0.80, ny: 0.68, nw: 0.26, nh: 0.32,
+        color: '#f43f5e'
+      },
+      sun: {
+        key: 'sun',
+        label: '天空右上角的金色太阳',
+        emoji: '☀️',
+        nx: 0.82, ny: 0.20, nw: 0.18, nh: 0.24,
+        color: '#a855f7'
+      }
+    };
+
+    const s3RegionBtns = document.querySelectorAll('.s3-region-btn');
+    const s3ShowPatchGridToggle = document.getElementById('s3ShowPatchGridToggle');
+
+    function selectRegionTarget(regionKey) {
+      s3SelectedRegionKey = regionKey;
+      s3RegionBtns.forEach(b => {
+        const k = b.getAttribute('data-region');
+        if (k === regionKey) {
+          b.className = 's3-region-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/40';
+        } else {
+          b.className = 's3-region-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600';
+        }
+      });
+      const targetTitle = document.getElementById('s3RegionTargetTitle');
+      if (targetTitle) {
+        targetTitle.textContent = `当前指代："${REGIONS[regionKey].label}"`;
+      }
+      renderStage3RegionRanking();
+    }
+
+    s3RegionBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectRegionTarget(btn.getAttribute('data-region'));
+      });
+    });
+
+    s3ShowPatchGridToggle.addEventListener('change', (e) => {
+      s3ShowPatchGrid = e.target.checked;
+    });
+
+    function renderStage3RegionRanking() {
+      const listEl = document.getElementById('s3RegionRankingList');
+      if (!listEl) return;
+
+      listEl.innerHTML = '';
+      Object.values(REGIONS).forEach(reg => {
+        const isTarget = reg.key === s3SelectedRegionKey;
+        const score = isTarget ? 0.93 : 0.19;
+        const item = document.createElement('div');
+        item.className = `p-2.5 rounded-xl border transition cursor-pointer ${
+          isTarget ? 'bg-indigo-500/15 border-indigo-500/50' : 'bg-slate-900/70 border-slate-800/80 hover:border-slate-700'
+        }`;
+        item.innerHTML = `
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="font-medium ${isTarget ? 'text-white' : 'text-slate-300'}">${reg.emoji} 候选区域：${reg.label}</span>
+            <span class="font-mono font-bold ${isTarget ? 'text-emerald-400' : 'text-slate-400'}">${score.toFixed(2)}</span>
+          </div>
+          <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+            <div class="h-full rounded-full ${isTarget ? 'bg-emerald-400' : 'bg-slate-600'}" style="width: ${(score * 100).toFixed(0)}%"></div>
+          </div>
+        `;
+        item.addEventListener('click', () => selectRegionTarget(reg.key));
+        listEl.appendChild(item);
+      });
+    }
+
+    // Click inside Stage 3 Region Canvas to select object directly
+    const s3RegionCanvasEl = document.getElementById('stage3RegionCanvas');
+    if (s3RegionCanvasEl) {
+      s3RegionCanvasEl.addEventListener('click', (e) => {
+        const rect = s3RegionCanvasEl.getBoundingClientRect();
+        const nx = (e.clientX - rect.left) / rect.width;
+        const ny = (e.clientY - rect.top) / rect.height;
+
+        let bestKey = s3SelectedRegionKey;
+        let minDist = 999;
+        Object.values(REGIONS).forEach(reg => {
+          const d = Math.hypot(nx - reg.nx, ny - reg.ny);
+          if (d < minDist && d < 0.25) {
+            minDist = d;
+            bestKey = reg.key;
+          }
+        });
+        selectRegionTarget(bestKey);
+      });
+    }
+
+    function drawStage3RegionCanvas() {
+      const canvas = document.getElementById('stage3RegionCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+
+      // Draw Composite Outdoor Park Scene (Sky + Lawn + Road)
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.45);
+      skyGrad.addColorStop(0, '#0f172a');
+      skyGrad.addColorStop(1, '#1e293b');
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, w, h * 0.45);
+
+      const lawnGrad = ctx.createLinearGradient(0, h * 0.45, 0, h);
+      lawnGrad.addColorStop(0, '#064e3b');
+      lawnGrad.addColorStop(1, '#022c22');
+      ctx.fillStyle = lawnGrad;
+      ctx.fillRect(0, h * 0.45, w, h * 0.55);
+
+      // 7 x 5 ViT Patch Heatmap Overlay
+      const cols = 7;
+      const rows = 5;
+      const cellW = w / cols;
+      const cellH = h / rows;
+      const targetReg = REGIONS[s3SelectedRegionKey];
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const pcx = (c + 0.5) / cols;
+          const pcy = (r + 0.5) / rows;
+          const dist = Math.hypot(pcx - targetReg.nx, pcy - targetReg.ny);
+          const affinity = Math.max(0, 1 - dist / 0.32);
+
+          if (affinity > 0.05) {
+            ctx.fillStyle = `rgba(16, 185, 129, ${(affinity * 0.42).toFixed(2)})`;
+            ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+          }
+
+          if (s3ShowPatchGrid) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+          }
+        }
+      }
+
+      // Draw the 4 objects in the scene
+      Object.values(REGIONS).forEach(reg => {
+        const ox = reg.nx * w;
+        const oy = reg.ny * h;
+        const bw = reg.nw * w;
+        const bh = reg.nh * h;
+        const isTarget = reg.key === s3SelectedRegionKey;
+
+        // Object Emoji Icon
+        ctx.font = `${Math.round(Math.min(w, h) * 0.13)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(reg.emoji, ox, oy);
+
+        // Candidate or Active Referring Bounding Box
+        if (isTarget) {
+          const pad = 4 * Math.sin(s3AnimPulse);
+          drawRoundedRect(
+            ctx,
+            ox - bw / 2 - pad,
+            oy - bh / 2 - pad,
+            bw + pad * 2,
+            bh + pad * 2,
+            12,
+            'rgba(16, 185, 129, 0.10)',
+            '#10b981',
+            2.5
+          );
+
+          // Top tag label
+          drawRoundedRect(ctx, ox - bw / 2, oy - bh / 2 - 26, Math.max(135, bw), 22, 6, '#10b981', null, 0);
+          ctx.font = '700 11px Inter, sans-serif';
+          ctx.fillStyle = '#022c22';
+          ctx.fillText(`✓ 指代定位 (cos=0.93)`, ox - bw / 2 + Math.max(135, bw) / 2, oy - bh / 2 - 15);
+        } else {
+          ctx.setLineDash([4, 4]);
+          drawRoundedRect(ctx, ox - bw / 2, oy - bh / 2, bw, bh, 10, null, 'rgba(148, 163, 184, 0.35)', 1.2);
+          ctx.setLineDash([]);
+        }
+      });
+
+      ctx.restore();
+    }
+
+    // ==================== CANVAS RESIZING & ANIMATION LOOP ====================
+    function resizeAllCanvases() {
+      const dpr = window.devicePixelRatio || 1;
+      ['stage1Canvas', 'stage2Canvas', 'stage3RegionCanvas'].forEach(id => {
+        const canvas = document.getElementById(id);
+        if (!canvas || !canvas.parentElement) return;
+        const rect = canvas.parentElement.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          canvas.width = rect.width * dpr;
+          canvas.height = rect.height * dpr;
+        }
+      });
+    }
+
+    window.addEventListener('resize', () => {
+      resizeAllCanvases();
+    });
+
+    function animateLoop() {
+      if (activeStage === 1) {
+        if (s1Playing) {
+          s1Progress = (s1Progress + 0.65) % 400;
+          updateStage1PhaseBadges();
+        }
+        drawStage1Canvas();
+      } else if (activeStage === 2) {
+        if (s2AutoPlaying) {
+          if (s2Epoch < 100) {
+            s2Epoch = Math.min(100, s2Epoch + 0.4);
+            s2EpochSlider.value = Math.round(s2Epoch).toString();
+            s2EpochLabel.textContent = `Epoch ${Math.round(s2Epoch)}`;
+            renderSimilarityMatrix();
+          } else {
+            s2AutoPlaying = false;
+            s2AutoTrainBtn.textContent = '▶ 重新播放训练演化';
+          }
+        }
+        drawStage2Canvas();
+      } else if (activeStage === 3 && s3SubMode === 'region') {
+        s3AnimPulse += 0.08;
+        drawStage3RegionCanvas();
+      }
+
+      requestAnimationFrame(animateLoop);
+    }
+
+    window.addEventListener('load', () => {
+      resizeAllCanvases();
+      updateStage1PhaseBadges();
+      renderSimilarityMatrix();
+      renderStage3RetrievalCards();
+      renderStage3RegionRanking();
+      requestAnimationFrame(animateLoop);
+    });
+  </script>
+</body>
+</html>
